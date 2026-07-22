@@ -1,0 +1,12 @@
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSetInputProvider
+metadata:
+  name: metallb-platform-sandbox
+  namespace: flux-system
+  labels:
+    app: metallb
+spec:
+  type: Static
+  defaultValues:
+    version: "0.16.1"
+    addressRange: "10.2.200.0/29"

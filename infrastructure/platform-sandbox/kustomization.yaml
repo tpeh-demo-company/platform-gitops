@@ -3,7 +3,9 @@ kind: Kustomization
 
 resources:
   - ../base/istio.yaml
+  - ../base/metallb.yaml
   - istio.yaml
+  - metallb.yaml
 
 labels:
   - pairs:
