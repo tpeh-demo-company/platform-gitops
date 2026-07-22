@@ -11,6 +11,24 @@ spec:
   sourceRef:
     kind: GitRepository
     name: platform-sandbox
-  path: ./infrastructure/platform-sandbox
+  path: ./infrastructure/controllers/platform-sandbox
   prune: true
   wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infra-configs
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 2m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: platform-sandbox
+  path: ./infrastructure/configs/platform-sandbox
+  prune: true
+  wait: true
+  dependsOn:
+    - name: infra-controllers
