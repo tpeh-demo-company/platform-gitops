@@ -10,7 +10,7 @@ spec:
   timeout: 5m
   sourceRef:
     kind: GitRepository
-    name: platform-sandbox
+    name: app-dev
   path: ./infrastructure/app-dev
   prune: true
   wait: true
