@@ -3,7 +3,7 @@ kind: Kustomization
 
 labels:
   - pairs:
-      env: app-dev
+      env: platform-sandbox
     includeSelectors: true
     includeTemplates: true
 
