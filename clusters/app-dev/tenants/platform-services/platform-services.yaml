@@ -7,7 +7,7 @@ metadata:
 spec:
   url: https://github.com/Jdavid77/platform-services.git
   ref:
-    branch: main
+    branch: production
   interval: 1m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
