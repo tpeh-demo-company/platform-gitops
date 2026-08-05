@@ -24,3 +24,7 @@ spec:
   timeout: 10m0s
   prune: true
   wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
