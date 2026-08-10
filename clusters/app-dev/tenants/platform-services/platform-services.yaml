@@ -5,7 +5,7 @@ metadata:
   name: platform-services
   namespace: flux-system
 spec:
-  url: https://github.com/Jdavid77/platform-services.git
+  url: https://github.com/tpeh-demo-company/platform-services.git
   ref:
     branch: production
   interval: 1m
