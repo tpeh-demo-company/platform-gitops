@@ -1,0 +1,9 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: flux-infra
+spec:
+  interval: 1m
+  ref:
+    branch: ${GIT_BRANCH}
+  url: https://github.com/tpeh-demo-company/platform-services.git
