@@ -1,114 +1,56 @@
 # The Platform Engineer's Handbook - Platform Gitops
 
-This repository is the GitOps source of truth for all clusters managed by the platform team. Flux watches this repo and reconciles the declared state onto each cluster.
-
-Each cluster entry in this repo does one thing: pull in tenants. Each tenant is an upstream application or service repo that manages its own Kubernetes resources. This repo only owns the wiring — it doesn't contain application manifests directly.
-
+This repository is the GitOps source of truth for all clusters managed by the platform team. Flux watches this repo and reconciles the declared state onto each cluster. It follows the [ControlPlane D1 reference architecture](https://github.com/controlplaneio-fluxcd/d1-fleet): the fleet only owns the wiring, and the manifests live in the tenant repos.
 
 ## Repository Structure
 
 ```
 clusters/
-├── platform-sandbox/          # Staging cluster
-│   ├── kustomization.yaml     # Entry point — labels all resources env=platform-sandbox
-│   └── tenants/
-│       ├── kustomization.yaml # Lists active tenants
-│       ├── platform-services/
-│       │   ├── kustomization.yaml
-│       │   └── platform-services.yaml   # GitRepository + Kustomization
-│       └── demo-app/
-│           ├── kustomization.yaml
-│           └── demo-app.yaml            # GitRepository + Kustomization
-└── app-dev/                   # Production cluster
-    ├── kustomization.yaml
-    └── tenants/
-        ├── kustomization.yaml
-        ├── platform-services/
-        │   ├── kustomization.yaml
-        │   └── platform-services.yaml
-        └── demo-app/
-            ├── kustomization.yaml
-            └── demo-app.yaml
+├── platform-sandbox/          # Staging cluster (tracks `main`)
+│   ├── runtime-info.yaml      # flux-runtime-info ConfigMap
+│   └── infra-tenant.yaml      # Kustomization over ./tenants/infra
+└── app-dev/                   # Production cluster (tracks `production`)
+    ├── runtime-info.yaml
+    └── infra-tenant.yaml
+tenants/
+└── infra/                     # Shared by every cluster
+    ├── rbac.yaml              # flux-infra ServiceAccount + cluster-admin binding
+    ├── source.yaml            # GitRepository for platform-services
+    └── platform-services.yaml # Kustomization over ./environments/${ENVIRONMENT}
 ```
 
-## Tenant Model
+The `FluxInstance` (created by `platform-core`) syncs `clusters/<cluster>`. The Flux Operator generates that path's `flux-system` manifests, so there is no `flux-system/` folder here.
 
-Each tenant consists of two Flux resources defined in `<tenant-name>.yaml`:
+## Runtime info
 
-- **`GitRepository`** — points to the upstream repo and branch to watch
-- **`Kustomization`** — points to a path within that repo containing the environment-specific manifests
+Each cluster has a `flux-runtime-info` ConfigMap (`clusters/<cluster>/runtime-info.yaml`):
 
-The Kustomization `path` is environment-aware: the same upstream repo serves both clusters by having per-environment overlay directories (e.g. `./deploy/platform-sandbox` for staging, `./deploy/app-dev` for production).
+| Key | staging (`platform-sandbox`) | production (`app-dev`) |
+| --- | --- | --- |
+| `ENVIRONMENT` | `staging` | `production` |
+| `GIT_BRANCH` | `main` | `production` |
+| `CLUSTER_NAME` | `platform-sandbox` | `app-dev` |
+| `CLUSTER_DOMAIN` | `demo-company.site` | `demo-company.site` |
 
-The cluster-level `kustomization.yaml` adds an `env` label to every resource reconciled through it, which makes it easy to filter resources by cluster in tooling.
+`infra-tenant.yaml` substitutes these into `tenants/infra` (`postBuild.substituteFrom`). Clusters therefore share the tenant manifests and differ only in runtime info. Escape any literal `${...}` in `tenants/` as `$${...}`.
 
-## Adding a New Tenant
+## Multitenancy
 
-1. **Create the tenant directory** under the target cluster:
+`platform-core` enables multitenancy on the Flux Operator and the `FluxInstance`. Cross-namespace references are refused, and any object without a `serviceAccountName` runs as the unprivileged `default` ServiceAccount. The infra tenant reconciles as `flux-infra` (cluster-admin); the sync `Kustomization` itself runs as `kustomize-controller`.
 
-   ```
-   clusters/<cluster>/tenants/<tenant-name>/
-   ```
+## Promotion
 
-2. **Create `<tenant-name>.yaml`** with a `GitRepository` and `Kustomization`:
+`main` is staging and `production` is production. Promote by merging `main` into `production` in the tenant repo (`platform-services`).
 
-   ```yaml
-   ---
-   apiVersion: source.toolkit.fluxcd.io/v1
-   kind: GitRepository
-   metadata:
-     name: <tenant-name>
-     namespace: flux-system
-   spec:
-     url: https://github.com/tpeh-demo-company/<repo>.git
-     ref:
-       branch: main
-     interval: 1m
-   ---
-   apiVersion: kustomize.toolkit.fluxcd.io/v1
-   kind: Kustomization
-   metadata:
-     name: <tenant-name>
-     namespace: flux-system
-   spec:
-     sourceRef:
-       kind: GitRepository
-       name: <tenant-name>
-     path: ./deploy/<cluster>   # path inside the upstream repo
-     interval: 1m
-     timeout: 10m0s
-     prune: true
-     wait: true
-   ```
+## Apps tenant
 
-3. **Create `kustomization.yaml`** in the tenant directory:
+The `demo-app` tenant (`platform-demo-apps`) is on hold and returns as `tenants/apps/`.
 
-   ```yaml
-   apiVersion: kustomize.config.k8s.io/v1beta1
-   kind: Kustomization
-   resources:
-     - <tenant-name>.yaml
-   ```
+## Adding a new cluster
 
-4. **Register the tenant** by adding it to `clusters/<cluster>/tenants/kustomization.yaml`:
-
-   ```yaml
-   resources:
-     - platform-services
-     - <tenant-name>       # add this
-   ```
-
-Flux will pick up the change on its next reconciliation interval and begin syncing the upstream repo.
-
-## Adding a New Cluster
-
-1. Create `clusters/<cluster-name>/kustomization.yaml` following the same pattern as the existing clusters (set the `env` label to the cluster name).
-2. Create `clusters/<cluster-name>/tenants/` and populate it following the tenant model above.
-3. Bootstrap Flux on the new cluster pointing at this repo. ( Should be done via `platform-core`)
+1. Create `clusters/<cluster-name>/runtime-info.yaml` and `infra-tenant.yaml`, copying an existing cluster and changing the values (the `sourceRef` names the `GitRepository` the `FluxInstance` creates, which is the Pulumi stack name).
+2. Bootstrap Flux through `platform-core` with a stack of the same name.
 
 ## Secrets (SOPS/age)
 
-Tenants that manage secrets (currently `platform-services`) use SOPS with age for encryption. Flux decrypts them at reconciliation time using a key stored as a Kubernetes secret named `sops-age` in the `flux-system` namespace.
-
-This secret must exist on the cluster before Flux can reconcile any tenant that declares `decryption.provider: sops`. If it's missing, the Kustomization will fail silently with a decryption error. ( Bootstrapped via `platform-core` also)
-```
+The `platform-services` `Kustomization` uses SOPS with age (`decryption.provider: sops`). Flux decrypts with the `sops-age` Secret in `flux-system`, created by `platform-core`. If it is missing the Kustomization fails with a decryption error.
