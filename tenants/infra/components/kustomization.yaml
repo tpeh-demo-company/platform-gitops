@@ -4,7 +4,13 @@ namespace: flux-system
 resources:
   - rbac.yaml
   - source.yaml
-  - platform-services.yaml
+  - cert-manager.yaml
+  - cloudflare.yaml
+  - istio.yaml
+  - kyverno.yaml
+  - monitoring.yaml
+  - opa.yaml
+  - reflector.yaml
 labels:
   - pairs:
       toolkit.fluxcd.io/tenant: infra
