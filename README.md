@@ -8,15 +8,23 @@ This repository is the GitOps source of truth for all clusters managed by the pl
 clusters/
 ├── platform-sandbox/          # Staging cluster (tracks `main`)
 │   ├── runtime-info.yaml      # flux-runtime-info ConfigMap
-│   └── infra-tenant.yaml      # Kustomization over ./tenants/infra
+│   └── infra-tenant.yaml      # Kustomization over ./tenants/infra/components
 └── app-dev/                   # Production cluster (tracks `production`)
     ├── runtime-info.yaml
     └── infra-tenant.yaml
 tenants/
 └── infra/                     # Shared by every cluster
-    ├── rbac.yaml              # flux-infra ServiceAccount + cluster-admin binding
-    ├── source.yaml            # GitRepository for platform-services
-    └── platform-services.yaml # Kustomization over ./environments/${ENVIRONMENT}
+    └── components/
+        ├── kustomization.yaml
+        ├── rbac.yaml          # flux-infra ServiceAccount + cluster-admin binding
+        ├── source.yaml        # GitRepository for platform-services
+        ├── cert-manager.yaml  # Kustomization over ./environments/${ENVIRONMENT}/cert-manager
+        ├── cloudflare.yaml    # ...one Kustomization per platform-services component
+        ├── istio.yaml
+        ├── kyverno.yaml
+        ├── monitoring.yaml
+        ├── opa.yaml
+        └── reflector.yaml
 ```
 
 The `FluxInstance` (created by `platform-core`) syncs `clusters/<cluster>`. The Flux Operator generates that path's `flux-system` manifests, so there is no `flux-system/` folder here.
@@ -32,7 +40,9 @@ Each cluster has a `flux-runtime-info` ConfigMap (`clusters/<cluster>/runtime-in
 | `CLUSTER_NAME` | `platform-sandbox` | `app-dev` |
 | `CLUSTER_DOMAIN` | `demo-company.site` | `demo-company.site` |
 
-`infra-tenant.yaml` substitutes these into `tenants/infra` (`postBuild.substituteFrom`). Clusters therefore share the tenant manifests and differ only in runtime info. Escape any literal `${...}` in `tenants/` as `$${...}`.
+`infra-tenant.yaml` substitutes these into `tenants/infra/components` (`postBuild.substituteFrom`). Clusters therefore share the tenant manifests and differ only in runtime info. Escape any literal `${...}` in `tenants/` as `$${...}`.
+
+Each `platform-services` component gets its own `Kustomization` in `tenants/infra`, matching the D1-fleet pattern of one `Kustomization` per component rather than one per tenant repo. `production` doesn't yet have `cloudflare/` or `kyverno/` under `environments/`, so those two `Kustomization`s fail to find their path on `app-dev` until that parity gap closes.
 
 ## Multitenancy
 
@@ -53,4 +63,4 @@ The `demo-app` tenant (`platform-demo-apps`) is on hold and returns as `tenants/
 
 ## Secrets (SOPS/age)
 
-The `platform-services` `Kustomization` uses SOPS with age (`decryption.provider: sops`). Flux decrypts with the `sops-age` Secret in `flux-system`, created by `platform-core`. If it is missing the Kustomization fails with a decryption error.
+Each component `Kustomization` uses SOPS with age (`decryption.provider: sops`). Flux decrypts with the `sops-age` Secret in `flux-system`, created by `platform-core`. If it is missing, every component's Kustomization fails with a decryption error.
